@@ -15,12 +15,20 @@ function petrol_station_queue_simulator()
     disp('2 - Built-in rand() function');
     rng_choice = input('Choose random number generator (1 or 2): ');
 
-    % Generate random numbers
+    % Generate random numbers for each category
     if rng_choice == 1
         seed = input('Enter seed for LCG (eg. 42): ');
-        rand_numbers= lcg(seed, num_vehicles);
+        % Generate separate random numbers for each category
+        rand_inter_arrival = lcg(seed, num_vehicles) * 100;
+        rand_petrol_type = lcg(seed+1, num_vehicles) * 100; % Different seed offset
+        rand_quantity = lcg(seed+2, num_vehicles) * 100;
+        rand_refuel_time = lcg(seed+3, num_vehicles) * 100;
     else
-        rand_numbers = rand(1, num_vehicles);
+        % Using MATLAB's built-in generator
+        rand_inter_arrival = rand(1, num_vehicles) * 100;
+        rand_petrol_type = rand(1, num_vehicles) * 100;
+        rand_quantity = rand(1, num_vehicles) * 100;
+        rand_refuel_time = rand(1, num_vehicles) * 100;
     end
     
     % Initialize probability tables
@@ -46,71 +54,113 @@ function petrol_station_queue_simulator()
     refuel_time.prob = [0.05, 0.15, 0.25, 0.30, 0.15, 0.10]';
     refuel_time.cdf = cumsum(refuel_time.prob);
     refuel_time.range = [1, 5; 5, 20; 20, 45; 45, 75; 75, 90; 90, 100];
+
+    % Table 4: Quantity (litres)
+    quantity = struct();
+    quantity.range = [10, 20; 20, 30; 30, 40; 40, 50; 50, 60]';
+    quantity.value = [15, 25, 35, 45, 55]';
     
     % Display the tables
     disp('=== Probability Tables ===');
     display_tables(inter_arrival, petrol_type, refuel_time);
 
     % Map random numbers to events
-    inter_arrival_samples = zeros(1, num_vehicles);
-    petrol_type_samples = cell(1, num_vehicles);
-    refuel_time_samples = zeros(1, num_vehicles);
+    inter_arrival_times = zeros(1, num_vehicles);
+    petrol_types = cell(1, num_vehicles);
+    refuel_times = zeros(1, num_vehicles);
+    quantities = zeros(1, num_vehicles);
+    total_prices = zeros(1, num_vehicles);
+    refuel_times = zeros(1, num_vehicles);
 
+    % Calculate arrival times first using inter-arrival random numbers
     for i = 1:num_vehicles
-        r = rand_numbers(i) * 100;
-        
-        % Inter-arrival time
+        r = rand_inter_arrival(i);
         idx = find(r <= inter_arrival.range(:,2), 1);
-        inter_arrival_samples(i) = inter_arrival.time(idx);
+        inter_arrival_times(i) = inter_arrival.time(idx);
         
+        if i == 1
+            arrival_times(i) = inter_arrival_times(i);
+        else
+            arrival_times(i) = arrival_times(i-1) + inter_arrival_times(i);
+        end
+    end
+
+    % Map other attributes using their specific random numbers
+    for i = 1:num_vehicles
         % Petrol type
+        r = rand_petrol_type(i);
         idx = find(r <= petrol_type.range(:,2), 1);
-        petrol_type_samples{i} = petrol_type.name{idx};
+        petrol_types{i} = petrol_type.name{idx};
+        
+        % Quantity
+        r = rand_quantity(i);
+        q_range = min(ceil(r/20), 5); % 5 quantity ranges
+        quantities(i) = quantity.value(q_range);
+        
+        % Total price
+        total_prices(i) = quantities(i) * petrol_type.price(idx);
         
         % Refueling time
+        r = rand_refuel_time(i);
         idx = find(r <= refuel_time.range(:,2), 1);
-        refuel_time_samples(i) = refuel_time.time(idx);
+        refuel_times(i) = refuel_time.time(idx);
     end
 
     % Display results
     disp('Simulation Results:');
-    fprintf('Vehicle | Inter-Arrival | Petrol Type  | Refuel Time\n');
-    fprintf('--------|---------------|--------------|------------\n');
+    printf('| Veh | Petrol Type  | Qty (L) | Price (RM) | Rand IntArr | IntArr | Arrival | Rand Refuel | Refuel |\n');
+    printf('|-----|--------------|---------|------------|-------------|--------|---------|-------------|--------|\n');
+    
     for i = 1:num_vehicles
-        fprintf('%4d    | %6.1f min    | %-12s | %6.1f min\n', ...
-                i, inter_arrival_samples(i), petrol_type_samples{i}, refuel_time_samples(i));
+        printf('| %3d | %-12s | %7.1f | %10.2f | %11d | %6d | %7d | %11d | %6d |\n', ...
+                i, ...
+                petrol_types{i}, ...
+                quantities(i), ...
+                total_prices(i), ...
+                rand_inter_arrival(i), ...
+                inter_arrival_times(i), ...
+                arrival_times(i), ...
+                rand_refuel_time(i), ...
+                refuel_times(i));
     end
 
     function display_tables(inter_arrival, petrol_type, refuel_time)
         % Display inter-arrival time table
         disp('Inter-arrival Time Table:');
-        fprintf('Time (min) Probability   CDF     Random Number Range\n');
-        fprintf('---------- -----------   ---     -------------------\n');
+        printf('------------------------------------------------------\n');
+        printf('Time (min) | Probability | CDF   | Random Number Range|\n');
+        printf('-----------|-------------|-------|--------------------|\n');
         for i = 1:length(inter_arrival.time)
-            fprintf('%5d       %6.2f      %5.2f       (%4.2f, %4.2f)\n', inter_arrival.time(i), inter_arrival.prob(i), ...
+            printf('%7d    | %5.2f       | %5.2f | (%6.2f, %9.2f)|\n', inter_arrival.time(i), inter_arrival.prob(i), ...
                     inter_arrival.cdf(i), inter_arrival.range(i,1), inter_arrival.range(i,2));
         end
-        fprintf('\n');
+        printf('\n');
         
         % Display petrol type table
         disp('Petrol Type Table:');
-        fprintf('Type               Probability    CDF   Random Number Range   Price (RM/l)\n');
-        fprintf('----               -----------    ---   -------------------   ------------\n');
+        disp('+---------------+-------------+-------+----------------------+-------------+');
+        disp('|    Type       | Probability |  CDF  | Random Number Range  | Price (RM/l)|');
+        disp('+---------------+-------------+-------+----------------------+-------------+');
         for i = 1:length(petrol_type.name)
-            fprintf('%-15s      %6.2f      %5.2f      (%4.2f, %4.2f)        %6.2f\n', petrol_type.name{i}, petrol_type.prob(i), ...
-                    petrol_type.cdf(i), petrol_type.range(i,1), petrol_type.range(i,2), petrol_type.price(i));
+            fprintf('| %-13s |    %5.2f    | %5.2f |   %5.2f - %-8.2f   |   %8.2f  |\n', ...
+                    petrol_type.name{i}, petrol_type.prob(i), petrol_type.cdf(i), ...
+                    petrol_type.range(i,1), petrol_type.range(i,2), petrol_type.price(i));
         end
-        fprintf('\n');
-    
-        % Display refueling time table
-        disp('Refueling Time Table:');
-        fprintf('Time (min)  Probability  CDF     Random Number Range\n');
-        fprintf('----------  -----------  ---     -------------------\n');
-        for i = 1:length(refuel_time.time)
-            fprintf('%5d         %6.2f    %5.2f       (%4.2f, %4.2f)\n', refuel_time.time(i), refuel_time.prob(i), ...
-                    refuel_time.cdf(i), refuel_time.range(i,1), refuel_time.range(i,2));
-        end
-        fprintf('\n');
+        disp('+---------------+-------------+-------+----------------------+-------------+');
+        disp(' ');
+
+        % Display refueling time table  
+        disp('Refueling Time Table:');  
+        disp('+------------+-------------+-------+----------------------+');  
+        disp('| Time (min) | Probability |  CDF  | Random Number Range  |');  
+        disp('+------------+-------------+-------+----------------------+');  
+        for i = 1:length(refuel_time.time)  
+            fprintf('|    %-5d   |    %6.2f   | %5.2f |   %5.2f - %-8.2f   |\n', ...  
+                    refuel_time.time(i), refuel_time.prob(i), refuel_time.cdf(i), ...  
+                    refuel_time.range(i,1), refuel_time.range(i,2));  
+        end  
+        disp('+------------+-------------+-------+----------------------+');  
+        disp(' ');  
     end
     
     
