@@ -8,11 +8,19 @@ function petrol_station_queue_simulator()
     disp('Brand: Petron');
     disp('-------------------------------------');
     
-    % Ask user for simulation parameters
+    % Ask user for number of vehicles
     num_vehicles = input('Enter number of vehicles to simulate: ');
+    
+    % Ask for peak/non-peak selection
+    disp('Select hour type:');
+    disp('1 - Non-Peak Hours');
+    disp('2 - Peak Hours');
+    hour_type = input('Choose hour type (1 or 2): ');
+    
+    % Ask for choice of random num generator
     disp('Available random number generators:');
-    disp('1 - Linear Congruential Generator (default)');
-    disp('2 - Built-in rand() function');
+    disp('1 - Linear Congruential Generator');
+    disp('2 - Built-in rand() function (default)');
     rng_choice = input('Choose random number generator (1 or 2): ');
 
     % Generate random numbers for each category
@@ -34,11 +42,21 @@ function petrol_station_queue_simulator()
     % Initialize probability tables
     
     % Table 1: Inter-arrival time (minutes)
-    inter_arrival = struct();
-    inter_arrival.time = [1, 2, 3, 4, 5, 6]';
-    inter_arrival.prob = [0.10, 0.25, 0.30, 0.20, 0.10, 0.05]';
-    inter_arrival.cdf = cumsum(inter_arrival.prob);
-    inter_arrival.range = [1, 10; 10, 35; 35, 65; 65, 85; 85, 95; 95, 100];
+    if hour_type == 1 % Non-Peak Hours
+        % More spread out arrival times (longer intervals more likely)
+        inter_arrival = struct();
+        inter_arrival.time = [1, 2, 3, 4, 5, 6]';
+        inter_arrival.prob = [0.10, 0.25, 0.30, 0.20, 0.10, 0.05]';
+        inter_arrival.cdf = cumsum(inter_arrival.prob);
+        inter_arrival.range = [1, 10; 10, 35; 35, 65; 65, 85; 85, 95; 95, 100];
+    else % Peak Hours
+        % More frequent arrivals (shorter intervals more likely)
+        inter_arrival = struct();
+        inter_arrival.time = [1, 2, 3, 4, 5, 6]';
+        inter_arrival.prob = [0.40, 0.35, 0.10, 0.10, 0.04, 0.01]';
+        inter_arrival.cdf = cumsum(inter_arrival.prob);
+        inter_arrival.range = [1, 40; 40, 75; 75, 85; 85, 95; 95, 99; 99, 100];
+    end
     
     % Table 2: Type of petrol
     petrol_type = struct();
@@ -124,7 +142,14 @@ function petrol_station_queue_simulator()
     total_vehicles_waited = 0;
     pump_usage = zeros(1,4); % Track how many vehicles used each pump
     
+    % Initialize event tracking
+    event_count = 0;
+    max_events = num_vehicles * 2;
+    event_times = zeros(1, max_events);
+    event_messages = cell(1, max_events);
+    
     % Initialize result tracking
+    sim_data = struct();
     pump_assignment = zeros(1, num_vehicles);
     start_time = zeros(1, num_vehicles);
     end_time = zeros(1, num_vehicles);
@@ -182,8 +207,41 @@ function petrol_station_queue_simulator()
         
         % Store pump assignment
         pump_assignment(i) = pump_assigned;
+        
+        % Store simulation data
+        sim_data(i).number = i;
+        sim_data(i).petrol_type = petrol_types{i};
+        sim_data(i).quantity = quantities(i);
+        sim_data(i).total_price = total_prices(i);
+        sim_data(i).inter_arrival_time = inter_arrival_times(i);
+        sim_data(i).arrival_time = arrival_times(i);
+        sim_data(i).lane = lane_assignment(i);
+        sim_data(i).refuel_time = refuel_times(i);
+        sim_data(i).pump = pump_assigned;
+        sim_data(i).start_time = start_time(i);
+        sim_data(i).end_time = end_time(i);
+        sim_data(i).wait_time = waiting_time(i);
+        sim_data(i).time_in_system = time_in_system;
+        
+        % Record events
+        event_count = event_count + 1;
+        event_times(event_count) = start_time(i);
+        event_messages{event_count} = sprintf('Vehicle %d arrived at minute %.1f and began refueling with %s at Pump %d.', ...
+            i, start_time(i), petrol_types{i}, pump_assigned);
+        
+        event_count = event_count + 1;
+        event_times(event_count) = end_time(i);
+        event_messages{event_count} = sprintf('Vehicle %d finished refueling and departed at minute %.1f.', ...
+            i, end_time(i));
     end
 
+    % Display events in chronological order
+    disp('=== Simulation Events ===');
+    [sorted_times, sort_idx] = sort(event_times(1:event_count));
+    for j = 1:event_count
+        disp(event_messages{sort_idx(j)});
+    end
+    
     % Calculate performance metrics
     avg_wait_time = total_wait_time / num_vehicles;
     avg_time_in_system = total_time_in_system / num_vehicles;
@@ -196,7 +254,7 @@ function petrol_station_queue_simulator()
     fprintf('|-----|--------------|------|------|---------|------------|---------|-------|-----|------|--------|\n');
 
     for i = 1:num_vehicles
-        fprintf('| %3d | %-12s |  %1d  |  %1d  | %7.1f | %10.2f | %7.1f | %5.1f | %3.1f | %4.1f | %6.1f |\n', ...
+        fprintf('| %3d | %-12s |  %1d   |  %1d   | %7.1f | %10.2f | %7.1f | %5.1f | %3.1f | %4.1f | %6.1f |\n', ...
                 i, ...
                 petrol_types{i}, ...
                 lane_assignment(i), ...
@@ -261,18 +319,3 @@ function petrol_station_queue_simulator()
     end
 end
 
-% Linear Congruential Generator (same as before)
-function r = lcg(seed, n)
-    a = 1664525;
-    c = 1013904223;
-    m = 2^32;
-    
-    r = zeros(n, 1);
-    r(1) = mod(seed, m);
-    
-    for i = 2:n
-        r(i) = mod(a * r(i-1) + c, m);
-    end
-    
-    r = r / m; % Normalize to [0,1)
-end
